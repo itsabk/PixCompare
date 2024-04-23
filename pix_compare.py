@@ -125,18 +125,25 @@ def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=
     sensitivity_threshold (int, optional): Threshold for highlighting differences. Defaults to 45.
     blur_value (tuple, optional): The size of the Gaussian blur kernel. Defaults to (21, 21).
     """
-    # Load the images from the given file paths
-    image1 = cv2.imread(image_path1)
-    image2 = cv2.imread(image_path2)
+    try:
+        # Load the images from the given file paths
+        image1 = cv2.imread(image_path1)
+        image2 = cv2.imread(image_path2)
 
-    # Align images if required
-    if align:
-        image1_aligned, _, alignment_success = align_images(image1, image2)
-        if alignment_success:
-            image1 = image1_aligned
+        if image1 is None or image2 is None:
+            raise ValueError("Failed to load one or both image files.")
 
-    # Highlight the differences
-    highlight_differences(image1, image2, sensitivity_threshold, blur_value)
+        # Align images if required
+        if align:
+            image1_aligned, _, alignment_success = align_images(image1, image2)
+            if alignment_success:
+                image1 = image1_aligned
+
+        # Highlight the differences
+        highlight_differences(image1, image2, sensitivity_threshold, blur_value)
+
+    except (IOError, ValueError) as e:
+        print(f"Error: {str(e)}")
 
 # Example usage
-compare_images('image1.jpg', 'image2.jpg', align=True, sensitivity_threshold=40, blur_value=(7, 7))
+compare_images('image1.jpg', 'image2r.jpg', align=True, sensitivity_threshold=40, blur_value=(7, 7))
