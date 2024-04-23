@@ -1,16 +1,17 @@
 import cv2
 import numpy as np
 
-def align_images(im1, im2):
+def align_images(im1, im2, max_crop_border=50):
     """
     Aligns two images using ORB feature detection and homography.
 
     Args:
     im1 (numpy.ndarray): The first image to be aligned.
     im2 (numpy.ndarray): The second image to which the first image is aligned.
+    max_crop_border (int, optional): The maximum number of pixels to crop from each border of the aligned image. Defaults to 50.
 
     Returns:
-    tuple: A tuple containing the aligned image, the homography matrix, and a boolean indicating success.
+    tuple: A tuple containing the aligned and cropped image, the homography matrix, and a boolean indicating success.
     """
     # Convert images to grayscale
     im1_gray = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
@@ -40,16 +41,28 @@ def align_images(im1, im2):
 
     if len(good) > MIN_MATCH_COUNT:
         # Extract locations of matched keypoints
-        src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-        dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+        src_pts = np.float32(
+            [keypoints1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+        dst_pts = np.float32(
+            [keypoints2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
 
         # Find homography using RANSAC
         h, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
+        # Calculate the percentage of inlier matches
+        inlier_ratio = np.sum(mask) / len(mask)
+
+        # Determine the crop border value based on the inlier ratio
+        crop_border = int(max_crop_border * (1 - inlier_ratio))
+
         # Use homography to warp image
         height, width, channels = im2.shape
         im1_aligned = cv2.warpPerspective(im1, h, (width, height))
-        return im1_aligned, h, True
+
+        # Crop the aligned image to remove border regions
+        im1_aligned_cropped = im1_aligned[crop_border:height-crop_border, crop_border:width-crop_border]
+
+        return im1_aligned_cropped, h, True
     else:
         print(f"Not enough matches are found - {len(good)}/{MIN_MATCH_COUNT}")
         return im1, None, False
@@ -135,9 +148,9 @@ def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=
 
         # Align images if required
         if align:
-            image1_aligned, _, alignment_success = align_images(image1, image2)
+            image1_aligned_cropped, _, alignment_success = align_images(image1, image2)
             if alignment_success:
-                image1 = image1_aligned
+                image1 = image1_aligned_cropped
 
         # Highlight the differences
         highlight_differences(image1, image2, sensitivity_threshold, blur_value)
@@ -146,4 +159,4 @@ def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=
         print(f"Error: {str(e)}")
 
 # Example usage
-compare_images('image1.jpg', 'image2r.jpg', align=True, sensitivity_threshold=40, blur_value=(7, 7))
+compare_images('image1.jpg', 'image2.jpg', align=True, sensitivity_threshold=40, blur_value=(7, 7))
