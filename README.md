@@ -8,6 +8,7 @@ PixCompare is a Python tool designed to highlight unique features between two im
 - **Image Resizing**: Automatically resizes images to the same dimensions for accurate comparison.
 - **Gaussian Blur Application**: Applies Gaussian blur to both images to focus on significant differences.
 - **Color Highlighted Differences**: Displays differences in color on a grayscale background, making them easy to identify.
+- **Auto Cropping**: Automatically removes black borders introduced during alignment for a cleaner output.
 
 ## Getting Started
 
@@ -63,6 +64,16 @@ To utilize PixCompare, follow these steps:
 5. **Experiment**: Adjust `sensitivity_threshold`, `blur_value`, and `align` settings to fine-tune the comparison for your specific images.
 
 Ensure all dependencies are installed as per the 'Installing' section before using PixCompare.
+
+## Testing
+
+PixCompare includes comprehensive unit tests to ensure its functionality and reliability. To run the tests, execute the following command:
+
+```bash
+python test_pix_compare.py
+```
+
+The test suite covers various scenarios, including parameter validation and method testing with alignment options.
 
 ## Contributing
 
