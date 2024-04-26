@@ -1,34 +1,35 @@
 import cv2
 import numpy as np
 
-def align_images(im1, im2, max_crop_border=50):
+def align_images(im1, im2, detector, auto_crop=False):
     """
-    Aligns two images using ORB feature detection and homography.
+    Aligns two images using feature detection and homography.
 
     Args:
     im1 (numpy.ndarray): The first image to be aligned.
     im2 (numpy.ndarray): The second image to which the first image is aligned.
-    max_crop_border (int, optional): The maximum number of pixels to crop from each border of the aligned image. Defaults to 50.
+    detector: The feature detection method to use.
+    auto_crop (bool, optional): Whether to automatically crop the black borders introduced during alignment. Defaults to False.
 
     Returns:
-    tuple: A tuple containing the aligned and cropped image, the homography matrix, and a boolean indicating success.
+    tuple: A tuple containing the aligned and optionally cropped image, the homography matrix, and a boolean indicating success.
     """
     # Convert images to grayscale
     im1_gray = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
     im2_gray = cv2.cvtColor(im2, cv2.COLOR_BGR2GRAY)
 
-    # Initialize ORB detector
-    orb = cv2.ORB_create(5000)  # increased key points
-
     # Detect keypoints and descriptors
-    keypoints1, descriptors1 = orb.detectAndCompute(im1_gray, None)
-    keypoints2, descriptors2 = orb.detectAndCompute(im2_gray, None)
+    keypoints1, descriptors1 = detector.detectAndCompute(im1_gray, None)
+    keypoints2, descriptors2 = detector.detectAndCompute(im2_gray, None)
 
-    # Create BFMatcher object
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    # Create matcher based on descriptor type
+    if descriptors1.dtype == np.float32:
+        matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+    else:
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
 
     # Match descriptors
-    matches = bf.knnMatch(descriptors1, descriptors2, k=2)
+    matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
 
     # Apply ratio test to find good matches
     good = []
@@ -49,20 +50,38 @@ def align_images(im1, im2, max_crop_border=50):
         # Find homography using RANSAC
         h, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
-        # Calculate the percentage of inlier matches
-        inlier_ratio = np.sum(mask) / len(mask)
-
-        # Determine the crop border value based on the inlier ratio
-        crop_border = int(max_crop_border * (1 - inlier_ratio))
-
         # Use homography to warp image
         height, width, channels = im2.shape
         im1_aligned = cv2.warpPerspective(im1, h, (width, height))
 
-        # Crop the aligned image to remove border regions
-        im1_aligned_cropped = im1_aligned[crop_border:height-crop_border, crop_border:width-crop_border]
 
-        return im1_aligned_cropped, h, True
+        if auto_crop:
+            # Convert the aligned image to grayscale
+            im1_aligned_gray = cv2.cvtColor(im1_aligned, cv2.COLOR_BGR2GRAY)
+
+            # Apply binary thresholding to create a mask
+            _, mask = cv2.threshold(im1_aligned_gray, 1, 255, cv2.THRESH_BINARY)
+
+            # Find contours in the mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Find the bounding rectangle of the largest contour
+            largest_contour = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest_contour)
+
+            # Add a small padding to the bounding rectangle
+            padding = 5
+            x = max(0, x - padding)
+            y = max(0, y - padding)
+            w = min(im1_aligned.shape[1] - x, w + 2 * padding)
+            h = min(im1_aligned.shape[0] - y, h + 2 * padding)
+
+            # Crop the aligned image using the bounding rectangle
+            im1_aligned_cropped = im1_aligned[y:y+h, x:x+w]
+
+            return im1_aligned_cropped, h, True
+        else:
+            return im1_aligned, h, True
     else:
         print(f"Not enough matches are found - {len(good)}/{MIN_MATCH_COUNT}")
         return im1, None, False
@@ -120,21 +139,18 @@ def highlight_differences(image1, image2, sensitivity_threshold=45, blur_value=(
     # Save the final image with highlighted differences
     cv2.imwrite('highlighted_output.jpg', final_image)
 
-    # Uncomment below lines to display the image
-    # cv2.imshow('Unique Highlighted Difference', final_image)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
     return 'highlighted_output.jpg'
 
-def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=45, blur_value=(21, 21)):
+def compare_images(image_path1, image_path2, method='ORB', align=False, auto_crop=False, sensitivity_threshold=45, blur_value=(21, 21)):
     """
     Processes two images by optionally aligning them and highlighting unique features.
 
     Args:
     image_path1 (str): Path to the first image.
     image_path2 (str): Path to the second image.
+    method (str, optional): The feature detection method to use. Defaults to 'ORB'.
     align (bool, optional): Whether to align the images before highlighting differences. Defaults to False.
+    auto_crop (bool, optional): Whether to automatically crop the black borders introduced during alignment. Defaults to False.
     sensitivity_threshold (int, optional): Threshold for highlighting differences. Defaults to 45.
     blur_value (tuple, optional): The size of the Gaussian blur kernel. Defaults to (21, 21).
     """
@@ -146,11 +162,31 @@ def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=
         if image1 is None or image2 is None:
             raise ValueError("Failed to load one or both image files.")
 
+        # Dictionary mapping method names to their respective OpenCV function calls
+        method_dict = {
+            'SIFT': cv2.SIFT_create(),
+            'BRISK': cv2.BRISK_create(),
+            'AKAZE': cv2.AKAZE_create(),
+            'KAZE': cv2.KAZE_create(),
+            'BRIEF': cv2.xfeatures2d.BriefDescriptorExtractor_create(),
+            'FREAK': cv2.xfeatures2d.FREAK_create(),
+            'LATCH': cv2.xfeatures2d.LATCH_create(),
+            'LUCID': cv2.xfeatures2d.LUCID_create(),
+            'DAISY': cv2.xfeatures2d.DAISY_create(),
+            'ORB': cv2.ORB_create(5000)
+        }
+
+        # Get the selected method from the dictionary
+        if method in method_dict:
+            detector = method_dict[method]
+        else:
+            raise ValueError("Invalid feature detection method. Please choose from: SIFT, BRISK, AKAZE, KAZE, BRIEF, FREAK, LATCH, LUCID, DAISY, or ORB.")
+
         # Align images if required
         if align:
-            image1_aligned_cropped, _, alignment_success = align_images(image1, image2)
+            image1_aligned, _, alignment_success = align_images(image1, image2, detector=detector, auto_crop=auto_crop)
             if alignment_success:
-                image1 = image1_aligned_cropped
+                image1 = image1_aligned
 
         # Highlight the differences
         highlight_differences(image1, image2, sensitivity_threshold, blur_value)
@@ -159,4 +195,4 @@ def compare_images(image_path1, image_path2, align=False, sensitivity_threshold=
         print(f"Error: {str(e)}")
 
 # Example usage
-compare_images('image1.jpg', 'image2.jpg', align=True, sensitivity_threshold=40, blur_value=(7, 7))
+compare_images('image1.jpg', 'image2.jpg', method='SIFT', align=True, auto_crop=True, sensitivity_threshold=40, blur_value=(7, 7))
