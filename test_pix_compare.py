@@ -36,18 +36,18 @@ class TestImageComparison(unittest.TestCase):
         for method in self.methods:
             with self.subTest(method=method):
                 # Test without alignment
-                compare_images('path/to/image1.jpg', 'path/to/image2.jpg', method=method, align=False)
+                compare_images('image1.jpg', 'image2.jpg', method=method, align=False)
 
                 # Test with alignment and auto_crop
-                compare_images('path/to/image1.jpg', 'path/to/image2.jpg', method=method, align=True, auto_crop=True)
+                compare_images('image1.jpg', 'image2.jpg', method=method, align=True, auto_crop=True)
 
         # Test with invalid method
         with self.assertRaises(ValueError):
-            compare_images('path/to/image1.jpg', 'path/to/image2.jpg', method='INVALID_METHOD')
+            compare_images('image1.jpg', 'image2.jpg', method='INVALID_METHOD')
 
         # Test with invalid image paths
         with self.assertRaises(ValueError):
-            compare_images('invalid/path.jpg', 'path/to/image2.jpg')
+            compare_images('invalid/path.jpg', 'image2.jpg')
 
 if __name__ == '__main__':
     unittest.main()
