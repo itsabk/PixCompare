@@ -127,8 +127,10 @@ def compare_images(image_path1, image_path2, method='ORB', align=False, auto_cro
         # Save the output image with method name in the filename
         cv2.imwrite(f'output/comparison_{method}.jpg', highlighted_image)
     
-    except (IOError, ValueError) as e:
+    except IOError as e:
         print(f"Error: {str(e)}")
+    except ValueError as e:
+        raise e
 
 # Example usage
 compare_images('image1.jpg', 'image2.jpg', method='SIFT', align=True, auto_crop=True, sensitivity_threshold=40, blur_value=(7, 7))
