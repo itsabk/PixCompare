@@ -12,7 +12,7 @@ def align_images(im1, im2, detector, auto_crop=False):
     auto_crop (bool, optional): Whether to automatically crop the black borders introduced during alignment. Defaults to False.
 
     Returns:
-    tuple: A tuple containing the aligned and optionally cropped image, the homography matrix, and a boolean indicating success.
+    tuple: A tuple containing the aligned image, the homography matrix, a boolean indicating success, and the cropping coordinates (if auto_crop is True).
     """
     # Convert images to grayscale
     im1_gray = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
@@ -54,37 +54,23 @@ def align_images(im1, im2, detector, auto_crop=False):
         height, width, channels = im2.shape
         im1_aligned = cv2.warpPerspective(im1, h, (width, height))
 
-
         if auto_crop:
-            # Convert the aligned image to grayscale
-            im1_aligned_gray = cv2.cvtColor(im1_aligned, cv2.COLOR_BGR2GRAY)
+            # Create a mask of non-black pixels
+            mask = cv2.cvtColor(im1_aligned, cv2.COLOR_BGR2GRAY) > 0
 
-            # Apply binary thresholding to create a mask
-            _, mask = cv2.threshold(im1_aligned_gray, 1, 255, cv2.THRESH_BINARY)
+            # Find the coordinates of non-black pixels
+            coords = np.argwhere(mask)
 
-            # Find contours in the mask
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Find the minimum and maximum coordinates
+            x_min, y_min = coords.min(axis=0)
+            x_max, y_max = coords.max(axis=0)
 
-            # Find the bounding rectangle of the largest contour
-            largest_contour = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(largest_contour)
-
-            # Add a small padding to the bounding rectangle
-            padding = 5
-            x = max(0, x - padding)
-            y = max(0, y - padding)
-            w = min(im1_aligned.shape[1] - x, w + 2 * padding)
-            h = min(im1_aligned.shape[0] - y, h + 2 * padding)
-
-            # Crop the aligned image using the bounding rectangle
-            im1_aligned_cropped = im1_aligned[y:y+h, x:x+w]
-
-            return im1_aligned_cropped, h, True
+            return im1_aligned, h, True, (x_min, x_max, y_min, y_max)
         else:
-            return im1_aligned, h, True
+            return im1_aligned, h, True, None
     else:
         print(f"Not enough matches are found - {len(good)}/{MIN_MATCH_COUNT}")
-        return im1, None, False
+        return im1, None, False, None
 
 def highlight_differences(image1, image2, sensitivity_threshold=45, blur_value=(21, 21)):
     """
@@ -136,10 +122,7 @@ def highlight_differences(image1, image2, sensitivity_threshold=45, blur_value=(
     # Overlay the color highlighted differences onto the grayscale background
     final_image = cv2.addWeighted(gray_image, 1, highlighted, 1, 0)
 
-    # Save the final image with highlighted differences
-    cv2.imwrite('highlighted_output.jpg', final_image)
-
-    return 'highlighted_output.jpg'
+    return final_image
 
 def compare_images(image_path1, image_path2, method='ORB', align=False, auto_crop=False, sensitivity_threshold=45, blur_value=(21, 21)):
     """
@@ -184,12 +167,20 @@ def compare_images(image_path1, image_path2, method='ORB', align=False, auto_cro
 
         # Align images if required
         if align:
-            image1_aligned, _, alignment_success = align_images(image1, image2, detector=detector, auto_crop=auto_crop)
+            image1_aligned, _, alignment_success, crop_coords = align_images(image1, image2, detector=detector, auto_crop=auto_crop)
             if alignment_success:
                 image1 = image1_aligned
 
         # Highlight the differences
-        highlight_differences(image1, image2, sensitivity_threshold, blur_value)
+        highlighted_image = highlight_differences(image1, image2, sensitivity_threshold, blur_value)
+
+        # Crop the highlighted image if auto_crop is True and crop_coords are available
+        if auto_crop and crop_coords:
+            x_min, x_max, y_min, y_max = crop_coords
+            highlighted_image = highlighted_image[x_min:x_max+1, y_min:y_max+1]
+
+        # Save the final image with highlighted differences
+        cv2.imwrite('highlighted_output.jpg', highlighted_image)
 
     except (IOError, ValueError) as e:
         print(f"Error: {str(e)}")
